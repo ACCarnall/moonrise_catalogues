@@ -59,8 +59,8 @@ gaia_star_mask = ruwe_mask & single_mask & pm_mask & var_flag
 gaia_table = gaia_table.groupby(gaia_star_mask).get_group(True)
 
 # Change from default GAIA DR3 epoch of 2016 to 2027 for MOONRISE
-gaia_table["pmra"] += gaia_table["pmra"]/1000/3600*(2027-2016)
-gaia_table["pmdec"] += gaia_table["pmdec"]/1000/3600*(2027-2016)
+gaia_table["ra"] += gaia_table["pmra"]/1000/3600*(2027-2016)
+gaia_table["dec"] += gaia_table["pmdec"]/1000/3600*(2027-2016)
 
 
 # ##### Merge GAIA star catalogue into main catalogue #####
