@@ -179,7 +179,9 @@ cosmos2025_khost = pd.merge(cosmos2025, khost, left_on="id",
                             right_on="Id_COSMOS25",
                             how="inner", suffixes=("_1", "_2"))
 
-# Alternatively could do our own matching, Khostoval uses 1.5", bit high?
+# Alternatively could do our own matching, Khostovan uses a 1.5" radius
+# for COSMOS2020 but must use a smaller one for COSMOS2025 though exact
+# value not clear - I've tested different radii, makes little difference
 # cosmos2020_khost = positional_cross_match(cosmos2020, khost, 1.0)
 # cosmos2025_khost = positional_cross_match(cosmos2025, khost, 1.0)
 
