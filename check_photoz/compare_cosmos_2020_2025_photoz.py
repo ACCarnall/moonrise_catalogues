@@ -51,8 +51,9 @@ cosmos2020.rename(columns={"ALPHA_J2000": "ra",
 # https://cosmos2025.iap.fr/catalog_download.php
 
 c2025_flux_path = "../COSMOSWeb_mastercatalog_v1.1_photom_primary.fits"
-cosmos2025_fluxes = Table.read(c2025_flux_path)#.to_pandas()
+cosmos2025_fluxes = Table.read(c2025_flux_path)
 
+# Fix weird column formatting
 aperture_diameters = [0.2, 0.3, 0.5, 0.75]
 aper_cols = [col for col in cosmos2025_fluxes.colnames if "_aper_" in col]
 
@@ -75,15 +76,12 @@ cosmos2025 = pd.merge(cosmos2025_fluxes, cosmos2025_photoz, left_index=True,
 cosmos2025 = cosmos2025[cosmos2025["mag_auto_f115w"] < 24]
 cosmos2025 = cosmos2025[cosmos2025["zfinal"] > 0]
 
-
 # DJA v4.5 NIRSpec catalogue, unedited csv download from
 # https://s3.amazonaws.com/msaexp-nirspec/extractions/nirspec_public_v4.5.html
 dja_cat = pd.read_csv("../dja_nirspec_v4.5.csv")
 dja_cat = dja_cat[dja_cat["grade"] == 3]
 
-
-
-# Match and plot
+# ##### Compare photozs to DJA v4.5 speczs #####
 cosmos2020_dja = positional_cross_match(cosmos2020, dja_cat, 0.35)
 cosmos2025_dja = positional_cross_match(cosmos2025, dja_cat, 0.35)
 
@@ -159,35 +157,31 @@ ax2.annotate("$z_\\mathrm{phot}$ wrongly outside 0.7$-$2.6 range: "
              xy=(0.05, 0.85), xycoords="axes fraction", fontsize=14,
              ha="left", va="top")
 
-#plt.show()
-#plt.close()
 plt.savefig("cosmos2020_2025_dja_comparison.pdf", dpi=300,
             bbox_inches="tight")
 
+# ##### Now compare photozs to Khostovan et al. (2025) specz compilation #####
 
-
-# khost et al. (2025) specz compilation, unedited download from
+# Khostovan et al. (2025) v1.1 specz compilation, unedited download from
 # https://github.com/cosmosastro/speczcompilation
 specz_path = "../specz_compilation_COSMOS_DR1.1_unique.fits"
 khost = Table.read(specz_path).to_pandas()
 khost.rename(columns={"specz": "specz_khost", "ra_corrected": "ra",
-                          "dec_corrected": "dec"}, inplace=True)
+                      "dec_corrected": "dec"}, inplace=True)
 
 khost = khost[khost["Confidence_level"] >= 97]
-#khost.drop_duplicates(subset="Id_COS20_Classic", inplace=True)
-
-khost.index = khost["Id_COS20_Classic"].values
 
 cosmos2020_khost = pd.merge(cosmos2020, khost, left_on="ID",
-                                right_on="Id_COS20_Classic",
-                                how="inner", suffixes=("_1", "_2"))
+                            right_on="Id_COS20_Classic",
+                            how="inner", suffixes=("_1", "_2"))
 
 cosmos2025_khost = pd.merge(cosmos2025, khost, left_on="id",
-                                right_on="Id_COSMOS25",
-                                how="inner", suffixes=("_1", "_2"))
+                            right_on="Id_COSMOS25",
+                            how="inner", suffixes=("_1", "_2"))
 
-#cosmos2020_khost = positional_cross_match(cosmos2020, khost, 0.3)
-#cosmos2025_khost = positional_cross_match(cosmos2025, khost, 0.3)
+# Alternatively could do our own matching, Khostoval uses 1.5", bit high?
+# cosmos2020_khost = positional_cross_match(cosmos2020, khost, 1.0)
+# cosmos2025_khost = positional_cross_match(cosmos2025, khost, 1.0)
 
 moonrise_zphot_mask_cosmos2020 = ((cosmos2020_khost["ez_z_phot"] >= 0.7)
                                   & (cosmos2020_khost["ez_z_phot"] <= 2.6))
@@ -196,10 +190,10 @@ moonrise_zphot_mask_cosmos2025 = ((cosmos2025_khost["zfinal"] >= 0.7)
                                   & (cosmos2025_khost["zfinal"] <= 2.6))
 
 moonrise_zkhost_mask_cosmos2020 = ((cosmos2020_khost["specz_khost"] >= 0.7)
-                                 & (cosmos2020_khost["specz_khost"] <= 2.6))
+                                   & (cosmos2020_khost["specz_khost"] <= 2.6))
 
 moonrise_zkhost_mask_cosmos2025 = ((cosmos2025_khost["specz_khost"] >= 0.7)
-                                 & (cosmos2025_khost["specz_khost"] <= 2.6))
+                                   & (cosmos2025_khost["specz_khost"] <= 2.6))
 
 fig = plt.figure(figsize=(12, 5))
 gs = fig.add_gridspec(1, 2)
@@ -261,7 +255,5 @@ ax2.annotate("$z_\\mathrm{phot}$" + f" wrongly outside 0.7$-$2.6 range: "
              xy=(0.05, 0.85), xycoords="axes fraction", fontsize=14,
              ha="left", va="top")
 
-#plt.show()
-#plt.close()
 plt.savefig("cosmos2020_2025_khostovan25_comparison.pdf", dpi=300,
             bbox_inches="tight")
