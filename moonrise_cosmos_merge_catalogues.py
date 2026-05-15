@@ -10,18 +10,12 @@ from astropy.coordinates import SkyCoord
 
 from gaiaunlimited.selectionfunctions import binaries
 
-# disable INFO level logs from being printed to terminal
-log.disable(log.INFO)
-log.basicConfig(level=50)
-
-field = "cosmos"
-
 
 # ##### Load up base tables #####
 
 # COSMOS2020 catalogue, unedited download from
 # https://irsa.ipac.caltech.edu/data/COSMOS/tables/cosmos2020/
-cosmos2020_table = Table.read("COSMOS2020_CLASSIC_R1_v2.2_p3.fits").to_pandas()
+cosmos2020 = Table.read("COSMOS2020_CLASSIC_R1_v2.2_p3.fits").to_pandas()
 
 # GAIA star catalogue, unedited download using only ra/dec criteria from
 # https://gea.esac.esa.int/archive/, SQL query text saved with this file
@@ -33,7 +27,7 @@ gaia_table = Table.read(f"gaia_stars_{field}.fits").to_pandas()
 # Cut GAIA table by RA and DEC to COSMOS2020 catalogue area
 ra_mask = (gaia_table["ra"] > 149.05) & (gaia_table["ra"] < 151.07)
 dec_mask = (gaia_table["dec"] > 1.39) & (gaia_table["dec"] < 3.08)
-gaia_table = gaia_table.groupby(ra_mask & dec_mask).get_group(True)
+gaia_table = gaia_table[ra_mask & dec_mask]
 
 # Cut by ruwe value to exclude binaries using gaiaunlimited package to
 # calculate threshold local to field from Castro-Ginard et al. (2024)
@@ -56,7 +50,7 @@ var_flag = (gaia_table["phot_variable_flag"] != "VARIABLE")
 
 # combine masks and apply to GAIA table
 gaia_star_mask = ruwe_mask & single_mask & pm_mask & var_flag
-gaia_table = gaia_table.groupby(gaia_star_mask).get_group(True)
+gaia_table = gaia_table[gaia_star_mask]
 
 # Change from default GAIA DR3 epoch of 2016 to 2027 for MOONRISE
 gaia_table["ra"] += gaia_table["pmra"]/1000/3600*(2027-2016)
@@ -69,7 +63,24 @@ gaia_table["dec"] += gaia_table["pmdec"]/1000/3600*(2027-2016)
 # ##### Sort out best redshift column #####
 
 
-# ##### Merge in i-band catalogue sources #####
+# ##### Merge in bagpipes results catalogue #####
+# Cuts to exactly reproduce Ross's 2023 sample selection that was used to
+# define objects Bagpipes was run on for UVJ colours and stellar masses
+# cat = cat[cat["FLAG_COMBINED"] == 0]
+# cat = cat[cat["UVISTA_H_MAG_APER3"] <= 25]
+# cat = cat[(cat["ez_z_phot"] >= 0.7) & (cat["ez_z_phot"] <= 2.6)]
+
+# Bagpipes fit results for COSMOS2020 sub-sample
+pipes_cat = Table.read("cosmos_bagpipes_subsample.fits").to_pandas()
+
+cols_to_drop = cosmos2020.columns[np.isin(cosmos2020.columns,
+                                          pipes_cat.columns)]
+pipes_cat.drop(columns=cols_to_drop, inplace=True)
+pipes_cat.rename(columns={"id": "ID"}, inplace=True)
+
+# Merge COSMOS2020 catalogue with Bagpipes fit results catalogue
+cosmos2020 = pd.merge(cosmos2020, pipes_cat, left_on="ID", right_on="ID",
+                      suffixes=('_1', '_2'))
 
 
 # ##### Merge in high-z and AGN (and other?) source catalogues #####
