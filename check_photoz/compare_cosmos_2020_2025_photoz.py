@@ -9,17 +9,15 @@ from astropy import units as u
 
 def positional_cross_match(cat1, cat2, dist_arcsec):
     """
-    Cross-match two catalogues based on their RA and DEC columns, returning
-    a new joined catalogue with only the closest matched sources.
+    Cross-match two catalogues based on ra and dec columns, returning
+    a new joined catalogue with only sources that have a close match.
     """
 
-    # Create SkyCoord objects for both catalogues
     coords1 = SkyCoord(ra=cat1['ra'].values*u.degree,
                        dec=cat1['dec'].values*u.degree)
     coords2 = SkyCoord(ra=cat2['ra'].values*u.degree,
                        dec=cat2['dec'].values*u.degree)
 
-    # Perform cross-matching using astropy's search_around_sky function
     result = match_coordinates_sky(coords1, coords2)
 
     dist_mask = result[1] < dist_arcsec*u.arcsec
@@ -36,7 +34,6 @@ def positional_cross_match(cat1, cat2, dist_arcsec):
 
 # COSMOS2020 catalogue, unedited download from
 # https://irsa.ipac.caltech.edu/data/COSMOS/tables/cosmos2020/
-
 cosmos2020 = Table.read("../COSMOS2020_CLASSIC_R1_v2.2_p3.fits").to_pandas()
 
 # Cuts to exactly reproduce Ross's 2023 sample selection that was used to
@@ -47,9 +44,8 @@ cosmos2020 = cosmos2020[cosmos2020["UVISTA_H_MAG_APER3"] <= 24]
 cosmos2020.rename(columns={"ALPHA_J2000": "ra",
                            "DELTA_J2000": "dec"}, inplace=True)
 
-# COSMOS2025 catalogue, unedited download from
+# COSMOS2025 photometric catalogue, unedited download from
 # https://cosmos2025.iap.fr/catalog_download.php
-
 c2025_flux_path = "../COSMOSWeb_mastercatalog_v1.1_photom_primary.fits"
 cosmos2025_fluxes = Table.read(c2025_flux_path)
 
@@ -67,13 +63,15 @@ for aper_col in aper_cols:
 
 cosmos2025_fluxes = cosmos2025_fluxes.to_pandas()
 
+# COSMOS2025 photoz catalogue, unedited download from
+# https://cosmos2025.iap.fr/catalog_download.php
 c2025_photoz_path = "../COSMOSWeb_mastercatalog_v1.1_lephare.fits"
 cosmos2025_photoz = Table.read(c2025_photoz_path).to_pandas()
 
 cosmos2025 = pd.merge(cosmos2025_fluxes, cosmos2025_photoz, left_index=True,
                       right_index=True)
 
-cosmos2025 = cosmos2025[cosmos2025["mag_auto_f115w"] < 24]
+cosmos2025 = cosmos2025[cosmos2025["mag_auto_f150w"] < 24]
 cosmos2025 = cosmos2025[cosmos2025["zfinal"] > 0]
 
 # DJA v4.5 NIRSpec catalogue, unedited csv download from
@@ -123,7 +121,6 @@ ax2.set_ylabel("DJA v4.5 zfit")
 
 ax1.set_xlim(0, axesmax+0.5)
 ax2.set_xlim(0, axesmax+0.5)
-
 ax1.set_ylim(0, axesmax+0.5)
 ax2.set_ylim(0, axesmax+0.5)
 
@@ -223,7 +220,6 @@ ax2.set_ylabel("Khostovan et al. (2025) specz")
 
 ax1.set_xlim(0, axesmax+0.5)
 ax2.set_xlim(0, axesmax+0.5)
-
 ax1.set_ylim(0, axesmax+0.5)
 ax2.set_ylim(0, axesmax+0.5)
 
