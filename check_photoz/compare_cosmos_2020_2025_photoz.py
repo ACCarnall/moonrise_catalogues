@@ -194,13 +194,19 @@ khost = khost[both_cats_mask]
 khost = khost[khost["Confidence_level"] >= 95]
 
 # Match using cosmos2020 and cosmos2025 IDs provided by Khostovan et al.
-cosmos2020_khost = pd.merge(cosmos2020_raw, khost, left_on="ID",
-                            right_on="Id_COS20_Classic",
-                            how="inner", suffixes=("_1", "_2"))
+cosmos2020_khost = pd.merge(khost, cosmos2020_raw, left_on="Id_COS20_Classic",
+                            right_on="ID", how="inner", suffixes=("_1", "_2"))
 
-cosmos2025_khost = pd.merge(cosmos2025_raw, khost, left_on="id",
-                            right_on="Id_COSMOS25",
-                            how="inner", suffixes=("_1", "_2"))
+cosmos2025_khost = pd.merge(khost, cosmos2025_raw, left_on="Id_COSMOS25",
+                            right_on="id", how="inner", suffixes=("_1", "_2"))
+
+# Cut by photometry flag and H-band magnitude to match MOONRISE criteria
+mask_phot_combined = (cosmos2020_khost["FLAG_COMBINED"] == 0)
+mask_h24 = (cosmos2020_khost["UVISTA_H_MAG_APER3"] <= 24)
+both_mask = mask_h24 & mask_phot_combined
+cosmos2020_khost = cosmos2020_khost[both_mask]
+cosmos2025_khost = cosmos2025_khost[both_mask]
+
 """
 # Alternatively could do our own matching, Khostovan uses a 1.5" radius
 # for COSMOS2020 but must use a smaller one for COSMOS2025 though exact
@@ -208,6 +214,7 @@ cosmos2025_khost = pd.merge(cosmos2025_raw, khost, left_on="id",
 cosmos2020_khost = positional_cross_match(cosmos2020, khost, 0.5)
 cosmos2025_khost = positional_cross_match(cosmos2025, khost, 0.5)
 """
+
 moonrise_zphot_mask_cosmos2020 = ((cosmos2020_khost["ez_z_phot"] >= 0.7)
                                   & (cosmos2020_khost["ez_z_phot"] <= 2.6))
 
