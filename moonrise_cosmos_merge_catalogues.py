@@ -20,17 +20,19 @@ cosmos2020 = Table.read("COSMOS2020_CLASSIC_R1_v2.2_p3.fits").to_pandas()
 cosmos2020["PMRA"] = 0.
 cosmos2020["PMDEC"] = 0.
 cosmos2020.rename(columns={"ALPHA_J2000": "RA",
-                            "DELTA_J2000": "DEC",
-                            "ez_z_phot": "ZPHOT"}, inplace=True)
+                           "DELTA_J2000": "DEC",
+                           "ez_z_phot": "ZPHOT"}, inplace=True)
 
 cosmos2020["MAG"] = -99.
-cosmos2020.loc[cosmos2020["UVISTA_H_MAG_APER3"] > 0, "MAG"] = cosmos2020["UVISTA_H_MAG_APER3"]
+H_mask = (cosmos2020["UVISTA_H_MAG_APER3"] > 0)
+cosmos2020.loc[H_mask, "MAG"] = cosmos2020.loc[H_mask, "UVISTA_H_MAG_APER3"]
 
 # Estimate SIZE in arcsec(defined as diameter containing ~all of the flux)
 # from FLUX_RADIUS, which is the half-light radius in pixels (0.15"/pixel)
 
 cosmos2020["SIZE"] = -99.
-cosmos2020.loc[cosmos2020["FLUX_RADIUS"] > 0, "SIZE"] = 4*cosmos2020["FLUX_RADIUS"]*0.15
+r_mask = (cosmos2020["FLUX_RADIUS"] > 0)
+cosmos2020.loc[r_mask, "SIZE"] = 4*cosmos2020.loc[r_mask, "FLUX_RADIUS"]*0.15
 
 cosmos2020["STAR"] = 0
 
@@ -49,7 +51,8 @@ khost = khost[khost["Confidence_level"] >= 95]
 khost = khost[["Id_COS20_Classic", "ZSPEC_KHOSTOVAN", "ZFLAG_KHOSTOVAN"]]
 
 # Match using cosmos2020 and cosmos2025 IDs provided by Khostovan et al.
-cosmos2020 = pd.merge(cosmos2020, khost, how="outer", left_on="ID", right_on="Id_COS20_Classic")
+cosmos2020 = pd.merge(cosmos2020, khost, how="outer", left_on="ID",
+                      right_on="Id_COS20_Classic")
 
 cosmos2020.drop(columns=["Id_COS20_Classic"], inplace=True)
 
@@ -98,8 +101,10 @@ gaia_table["STAR"] = 1
 gaia_table = gaia_table[["source_id", "ra", "dec", "pmra", "pmdec", "ruwe",
                          "STAR", "phot_rp_mean_mag"]]
 
-gaia_table.rename(columns={"source_id": "GAIA_STAR_ID", "ra": "RA", "dec": "DEC",
-                           "pmra": "PMRA", "pmdec": "PMDEC", "ruwe": "RUWE",
+gaia_table.rename(columns={"source_id": "GAIA_STAR_ID",
+                           "ra": "RA", "dec": "DEC",
+                           "pmra": "PMRA", "pmdec": "PMDEC",
+                           "ruwe": "RUWE",
                            "phot_rp_mean_mag": "GAIA_magR"}, inplace=True)
 
 cosmos2020 = pd.concat([cosmos2020, gaia_table], ignore_index=True)
@@ -132,20 +137,22 @@ cosmos2020 = pd.merge(cosmos2020, pipes_cat, how="outer", on=None)
 
 cosmos2020["ZBEST"] = -99.
 cosmos2020.loc[cosmos2020["ZPHOT"] > 0, "ZBEST"] = cosmos2020["ZPHOT"]
-cosmos2020.loc[cosmos2020["ZSPEC_KHOSTOVAN"] > 0, "ZBEST"] = cosmos2020["ZSPEC_KHOSTOVAN"]
+zs_mask = (cosmos2020["ZSPEC_KHOSTOVAN"] > 0)
+cosmos2020.loc[zs_mask, "ZBEST"] = cosmos2020.loc[zs_mask, "ZSPEC_KHOSTOVAN"]
 
 
 # ##### Keep only necessary columns, set -99s and save to file #####
 
 cosmos2020.fillna(dict(zip(cosmos2020.columns, [-99] * cosmos2020.shape[0])),
-                   inplace=True)
+                  inplace=True)
 cosmos2020.fillna({"ZFLAG_KHOSTOVAN": -99}, inplace=True)
 
 cosmos2020 = cosmos2020[["ID", "RA", "DEC", "PMRA", "PMDEC", "MAG", "SIZE",
                          "FLAG_COMBINED", "ZBEST", "ZPHOT", "ZSPEC_KHOSTOVAN",
                          "ZFLAG_KHOSTOVAN", "STAR", "GAIA_STAR_ID",
                          "GAIA_magR", "RUWE", "ABS_U", "ABS_V", "ABS_J",
-                         "stellar_mass_16", "stellar_mass_50", "stellar_mass_84"]]
+                         "stellar_mass_16", "stellar_mass_50",
+                         "stellar_mass_84"]]
 
 Table.from_pandas(cosmos2020).write("moonrise_cosmos_catalogue.fits",
                                     overwrite=True)
