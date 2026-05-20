@@ -10,7 +10,7 @@ from astropy.coordinates import SkyCoord
 
 from gaiaunlimited.selectionfunctions import binaries
 
-from topcat_match import topcat_symmetric_match
+from pair_match_sky import pair_match_sky
 
 # ##### Load up base tables #####
 
@@ -24,9 +24,11 @@ cosmos2020.rename(columns={"ALPHA_J2000": "RA",
                            "DELTA_J2000": "DEC",
                            "ez_z_phot": "ZPHOT"}, inplace=True)
 
-cosmos2020["MAG"] = -99.
+cosmos2020["HMAG"] = -99.
+cosmos2020["HMAG_FLAG"] = -99.
 H_mask = (cosmos2020["UVISTA_H_MAG_APER3"] > 0)
-cosmos2020.loc[H_mask, "MAG"] = cosmos2020.loc[H_mask, "UVISTA_H_MAG_APER3"]
+cosmos2020.loc[H_mask, "HMAG"] = cosmos2020.loc[H_mask, "UVISTA_H_MAG_APER3"]
+cosmos2020.loc[H_mask, "HMAG_FLAG"] = 0
 
 # Estimate SIZE in arcsec(defined as diameter containing ~all of the flux)
 # from FLUX_RADIUS, which is the half-light radius in pixels (0.15"/pixel)
@@ -36,6 +38,9 @@ r_mask = (cosmos2020["FLUX_RADIUS"] > 0)
 cosmos2020.loc[r_mask, "SIZE"] = 4*cosmos2020.loc[r_mask, "FLUX_RADIUS"]*0.15
 
 cosmos2020["STAR"] = 0
+
+
+# ##### Merge in Khostovan et al. (2025) v1.1 specz compilation #####
 
 # Khostovan et al. (2025) v1.1 specz compilation, unedited download from
 # https://github.com/cosmosastro/speczcompilation
@@ -55,16 +60,22 @@ khost = khost[["Id_COS20_Classic", "ZSPEC_KHOSTOVAN", "ZFLAG_KHOSTOVAN"]]
 cosmos2020 = pd.merge(cosmos2020, khost, how="outer", left_on="ID",
                       right_on="Id_COS20_Classic")
 
+
+# ##### Merge in GAIA star catalogue and flag potential guide stars #####
+
 # GAIA star catalogue, unedited download using only ra/dec criteria from
 # https://gea.esac.esa.int/archive/, SQL query text saved with this file
 gaia_table = Table.read("gaia_stars_cosmos.fits").to_pandas()
-
-# ##### Apply cuts to GAIA star catalogue #####
 
 # Cut GAIA table by RA and DEC to COSMOS2020 catalogue area
 ra_mask = (gaia_table["ra"] > 149.05) & (gaia_table["ra"] < 151.07)
 dec_mask = (gaia_table["dec"] > 1.39) & (gaia_table["dec"] < 3.08)
 gaia_table = gaia_table[ra_mask & dec_mask]
+
+Table.from_pandas(gaia_table).write("test2.fits", overwrite=True)
+
+
+# ##### Make flag for good potential guide stars #####
 
 # Cut by ruwe value to exclude binaries using gaiaunlimited package to
 # calculate threshold local to field from Castro-Ginard et al. (2024)
@@ -85,28 +96,97 @@ pm_mask = (gaia_table["pmra"].abs() < 0.1*1000)
 pm_mask = pm_mask & (gaia_table["pmdec"].abs() < 0.1*1000)
 var_flag = (gaia_table["phot_variable_flag"] != "VARIABLE")
 
-# combine masks and apply to GAIA table
-gaia_star_mask = ruwe_mask & single_mask & pm_mask & var_flag
-gaia_table = gaia_table[gaia_star_mask]
-
 # Set the STAR flag to 1 for all gaia objects
 gaia_table["STAR"] = 1
 
-# Merge in 2mass H-band magnitudes for GAIA stars
+# combine masks and apply to GAIA table
+gaia_star_mask = ruwe_mask & single_mask & pm_mask & var_flag
+gaia_table["GOOD_STAR"] = 0
+gaia_table.loc[gaia_star_mask, "GOOD_STAR"] = 1
+
+gaia_table["HMAG_FLAG"] = -99.
+gaia_table = gaia_table[["source_id", "ra", "dec", "pmra", "pmdec", "ruwe",
+                         "STAR", "GOOD_STAR", "phot_g_mean_mag",
+                         "phot_rp_mean_mag", "HMAG_FLAG"]]
+
+# Merge in H-band magnitudes for GAIA stars from cosmos2020
+gaia_table_match = pair_match_sky(gaia_table, cosmos2020, 0.2,
+                                  match_selection="Best match, symmetric",
+                                  join_type="All from 1",
+                                  ra_col_2="RA", dec_col_2="DEC",
+                                  suffix1="", suffix2="_c2020")
+
+drop_cols = cosmos2020.columns.tolist()
+for i in range(len(drop_cols)):
+    if drop_cols[i] in gaia_table.columns:
+        drop_cols[i] += "_c2020"
+
+drop_cols.append("match_sep_arcsec")
+drop_cols.remove("HMAG")
+
+gaia_table_match["HMAG"] = -99.
+mask = gaia_table_match["UVISTA_H_MAG_APER3"] > 0
+gaia_table_match.loc[mask, "HMAG"] = gaia_table_match.loc[mask, "UVISTA_H_MAG_APER3"]
+gaia_table_match.loc[mask, "HMAG_FLAG"] = 0
+
+gaia_table_match.drop(columns=drop_cols, inplace=True)
+
+# Merge in H-band magnitudes for GAIA stars from 2MASS PSC
+twomass = pd.read_csv("2mass_psc_cosmos.csv")
+gaia_table_match = pair_match_sky(gaia_table_match, twomass, 0.5,
+                                  match_selection="Best match, symmetric",
+                                  join_type="All from 1",
+                                  suffix1="", suffix2="_2mass")
+
+drop_cols = twomass.columns.tolist()
+for i in range(len(drop_cols)):
+    if drop_cols[i] in gaia_table.columns:
+        drop_cols[i] += "_2mass"
+
+drop_cols.append("match_sep_arcsec")
+
+# Merge in H-band magnitudes from 2mass, converting from Vega to AB
+mask = (gaia_table_match["h_m"].notnull()) & (gaia_table_match["HMAG"] < 0)
+gaia_table_match.loc[mask, "HMAG"] = gaia_table_match.loc[mask, "h_m"] + 1.38
+gaia_table_match.loc[mask, "HMAG_FLAG"] = 1
+
+gaia_table_match.drop(columns=drop_cols, inplace=True)
+
+# For GAIA stars without good H magnitudes, set MAG based on polynomial
+# fit to Gaia G-band magnitudes for stars with good H magnitudes
+x = gaia_table_match["phot_g_mean_mag"]
+bad_H_mask = ((gaia_table_match["HMAG"] < 0)
+              | (gaia_table_match["HMAG"] > 21)
+              | (gaia_table_match["HMAG"] > 0.75*x + 7)
+              | (gaia_table_match["HMAG"] < 0.75*x - 0.5))
+
+gaia_table_match.loc[bad_H_mask, "HMAG"] = 0.75*x + 3.5
+gaia_table_match.loc[bad_H_mask, "HMAG_FLAG"] = 2
+gaia_table_match.loc[bad_H_mask, "GOOD_STAR"] = 0
+
+Table.from_pandas(gaia_table_match).write("test.fits", overwrite=True)
 
 
 # ##### Merge GAIA star catalogue into main catalogue #####
 
-gaia_table = gaia_table[["source_id", "ra", "dec", "pmra", "pmdec", "ruwe",
-                         "STAR", "phot_rp_mean_mag"]]
+# Get rid of anything in cosmos2020 within 1" of a GAIA star
+cosmos2020 = pair_match_sky(cosmos2020, gaia_table_match, 1.0,
+                            match_selection="All matches",
+                            join_type="1 not 2",
+                            ra_col_1="RA", dec_col_1="DEC",
+                            suffix1="", suffix2="_gaia")
 
-gaia_table.rename(columns={"source_id": "GAIA_STAR_ID",
-                           "ra": "RA", "dec": "DEC",
-                           "pmra": "PMRA", "pmdec": "PMDEC",
-                           "ruwe": "RUWE",
-                           "phot_rp_mean_mag": "GAIA_magR"}, inplace=True)
+gaia_table_match.rename(columns={"source_id": "GAIA_STAR_ID",
+                                 "ra": "RA", "dec": "DEC",
+                                 "pmra": "PMRA", "pmdec": "PMDEC",
+                                 "ruwe": "RUWE",
+                                 "phot_rp_mean_mag": "GAIA_magR",
+                                 "phot_g_mean_mag": "GAIA_magG"},
+                                 inplace=True)
 
-cosmos2020 = pd.concat([cosmos2020, gaia_table], ignore_index=True)
+# Add in GAIA stars to main catalogue
+cosmos2020 = pd.concat([cosmos2020, gaia_table_match], ignore_index=True)
+
 
 # ##### Merge in bagpipes results catalogue #####
 
@@ -144,10 +224,10 @@ cosmos2020.loc[zs_mask, "ZBEST"] = cosmos2020.loc[zs_mask, "ZSPEC_KHOSTOVAN"]
 cosmos2020.fillna(dict(zip(cosmos2020.columns, [-99] * cosmos2020.shape[0])),
                   inplace=True)
 
-cosmos2020 = cosmos2020[["ID", "RA", "DEC", "PMRA", "PMDEC", "MAG", "SIZE",
+cosmos2020 = cosmos2020[["ID", "RA", "DEC", "PMRA", "PMDEC", "HMAG", "HMAG_FLAG", "SIZE",
                          "FLAG_COMBINED", "ZBEST", "ZPHOT", "ZSPEC_KHOSTOVAN",
-                         "ZFLAG_KHOSTOVAN", "STAR", "GAIA_STAR_ID",
-                         "GAIA_magR", "RUWE", "ABS_U", "ABS_V", "ABS_J",
+                         "ZFLAG_KHOSTOVAN", "STAR", "GOOD_STAR", "GAIA_STAR_ID", "RUWE",
+                         "GAIA_magG", "GAIA_magR", "ABS_U", "ABS_V", "ABS_J",
                          "stellar_mass_16", "stellar_mass_50",
                          "stellar_mass_84"]]
 
