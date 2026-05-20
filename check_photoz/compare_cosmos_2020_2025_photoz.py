@@ -22,18 +22,26 @@ def positional_cross_match(cat1, cat2, dist_arcsec, how="inner", ra_col_1="ra",
     coords2 = SkyCoord(ra=cat2[ra_col_2].values*u.degree,
                        dec=cat2[dec_col_2].values*u.degree)
 
+    # result[0] gives the index of the closest match in coords2 for each source
+    # result[1] gives sep between each coords1 and closest match in coords2
     result = match_coordinates_sky(coords1, coords2)
 
+    # create mask for only matches within dist_arcsec separation threshold
     dist_mask = result[1] < dist_arcsec*u.arcsec
 
+    # Merge in columns from cat2 into rows they matched with in cat1
+    # At this point, each cat2 row can be matched to multiple cat1 rows
     matched = pd.merge(cat1[dist_mask].reset_index(drop=True),
                        cat2.iloc[result[0][dist_mask]].reset_index(drop=True),
                        left_index=True, right_index=True, how=how,
                        suffixes=(suffix1, suffix2))
 
+    # Add columns for the index of the matched cat2 row and match separation
     matched["cat2_row"] = result[0][dist_mask]
     matched["match_sep_arcsec"] = result[1][dist_mask]
 
+    # If multiple cat1 rows match to the same cat2 row
+    # keep only the cat1 row with the smallest separation
     idxmin = matched.groupby("cat2_row")["match_sep_arcsec"].idxmin()
     matched = matched.loc[idxmin].reset_index(drop=True)
 

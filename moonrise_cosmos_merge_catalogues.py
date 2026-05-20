@@ -10,6 +10,7 @@ from astropy.coordinates import SkyCoord
 
 from gaiaunlimited.selectionfunctions import binaries
 
+from topcat_match import topcat_symmetric_match
 
 # ##### Load up base tables #####
 
@@ -53,8 +54,6 @@ khost = khost[["Id_COS20_Classic", "ZSPEC_KHOSTOVAN", "ZFLAG_KHOSTOVAN"]]
 # Match using cosmos2020 and cosmos2025 IDs provided by Khostovan et al.
 cosmos2020 = pd.merge(cosmos2020, khost, how="outer", left_on="ID",
                       right_on="Id_COS20_Classic")
-
-cosmos2020.drop(columns=["Id_COS20_Classic"], inplace=True)
 
 # GAIA star catalogue, unedited download using only ra/dec criteria from
 # https://gea.esac.esa.int/archive/, SQL query text saved with this file
@@ -127,14 +126,13 @@ pipes_cat.rename(columns={"id": "ID", "U_50": "ABS_U", "V_50": "ABS_V",
                           "J_50": "ABS_J"}, inplace=True)
 
 # Merge COSMOS2020 catalogue with Bagpipes fit results catalogue
-cosmos2020 = pd.merge(cosmos2020, pipes_cat, how="outer", on=None)
+cosmos2020 = pd.merge(cosmos2020, pipes_cat, how="outer")
 
 
 # ##### Merge in high-z and AGN (and other?) source catalogues #####
 
 
 # ##### Sort out best redshift column #####
-
 cosmos2020["ZBEST"] = -99.
 cosmos2020.loc[cosmos2020["ZPHOT"] > 0, "ZBEST"] = cosmos2020["ZPHOT"]
 zs_mask = (cosmos2020["ZSPEC_KHOSTOVAN"] > 0)
@@ -145,7 +143,6 @@ cosmos2020.loc[zs_mask, "ZBEST"] = cosmos2020.loc[zs_mask, "ZSPEC_KHOSTOVAN"]
 
 cosmos2020.fillna(dict(zip(cosmos2020.columns, [-99] * cosmos2020.shape[0])),
                   inplace=True)
-cosmos2020.fillna({"ZFLAG_KHOSTOVAN": -99}, inplace=True)
 
 cosmos2020 = cosmos2020[["ID", "RA", "DEC", "PMRA", "PMDEC", "MAG", "SIZE",
                          "FLAG_COMBINED", "ZBEST", "ZPHOT", "ZSPEC_KHOSTOVAN",
