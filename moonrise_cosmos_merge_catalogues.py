@@ -40,6 +40,27 @@ cosmos2020.loc[r_mask, "SIZE"] = 4*cosmos2020.loc[r_mask, "FLUX_RADIUS"]*0.15
 cosmos2020["STAR"] = 0
 
 
+# ##### Merge in bagpipes results catalogue #####
+
+# Cuts to exactly reproduce Ross's 2023 sample selection that was used to
+# define objects Bagpipes was run on for UVJ colours and stellar masses
+# cat = cat[cat["FLAG_COMBINED"] == 0]
+# cat = cat[cat["UVISTA_H_MAG_APER3"] <= 25]
+# cat = cat[(cat["ez_z_phot"] >= 0.7) & (cat["ez_z_phot"] <= 2.6)]
+
+# Bagpipes fit results for COSMOS2020 sub-sample
+pipes_cat = Table.read("cosmos_bagpipes_subsample.fits").to_pandas()
+
+pipes_cat = pipes_cat[["id", "stellar_mass_16", "stellar_mass_50",
+                       "stellar_mass_84", "U_50", "V_50", "J_50"]]
+
+pipes_cat.rename(columns={"id": "ID", "U_50": "ABS_U", "V_50": "ABS_V",
+                          "J_50": "ABS_J"}, inplace=True)
+
+# Merge COSMOS2020 catalogue with Bagpipes fit results catalogue
+cosmos2020 = pd.merge(cosmos2020, pipes_cat, how="outer")
+
+
 # ##### Merge in Khostovan et al. (2025) v1.1 specz compilation #####
 
 # Khostovan et al. (2025) v1.1 specz compilation, unedited download from
@@ -186,27 +207,6 @@ gaia_table_match.rename(columns={"source_id": "GAIA_STAR_ID",
 
 # Add in GAIA stars to main catalogue
 cosmos2020 = pd.concat([cosmos2020, gaia_table_match], ignore_index=True)
-
-
-# ##### Merge in bagpipes results catalogue #####
-
-# Cuts to exactly reproduce Ross's 2023 sample selection that was used to
-# define objects Bagpipes was run on for UVJ colours and stellar masses
-# cat = cat[cat["FLAG_COMBINED"] == 0]
-# cat = cat[cat["UVISTA_H_MAG_APER3"] <= 25]
-# cat = cat[(cat["ez_z_phot"] >= 0.7) & (cat["ez_z_phot"] <= 2.6)]
-
-# Bagpipes fit results for COSMOS2020 sub-sample
-pipes_cat = Table.read("cosmos_bagpipes_subsample.fits").to_pandas()
-
-pipes_cat = pipes_cat[["id", "stellar_mass_16", "stellar_mass_50",
-                       "stellar_mass_84", "U_50", "V_50", "J_50"]]
-
-pipes_cat.rename(columns={"id": "ID", "U_50": "ABS_U", "V_50": "ABS_V",
-                          "J_50": "ABS_J"}, inplace=True)
-
-# Merge COSMOS2020 catalogue with Bagpipes fit results catalogue
-cosmos2020 = pd.merge(cosmos2020, pipes_cat, how="outer")
 
 
 # ##### Merge in high-z and AGN (and other?) source catalogues #####
