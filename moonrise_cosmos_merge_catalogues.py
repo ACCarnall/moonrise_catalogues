@@ -22,7 +22,8 @@ cosmos2020["PMRA"] = 0.
 cosmos2020["PMDEC"] = 0.
 cosmos2020.rename(columns={"ALPHA_J2000": "RA",
                            "DELTA_J2000": "DEC",
-                           "ez_z_phot": "ZPHOT"}, inplace=True)
+                           "ez_z_phot": "ZPHOT",
+                           "ID": "COSMOS2020_ID"}, inplace=True)
 
 cosmos2020["HMAG"] = -99.
 cosmos2020["HMAG_FLAG"] = -99.
@@ -39,6 +40,8 @@ cosmos2020.loc[r_mask, "SIZE"] = 4*cosmos2020.loc[r_mask, "FLUX_RADIUS"]*0.15
 
 cosmos2020["STAR"] = 0
 
+cosmos2020["MOONRISE_ID"] = cosmos2020["COSMOS2020_ID"].astype(str)
+cosmos2020["MOONRISE_ID"] = "11001" + cosmos2020["MOONRISE_ID"].str.zfill(9)
 
 # ##### Merge in bagpipes results catalogue #####
 
@@ -58,8 +61,8 @@ pipes_cat.rename(columns={"id": "ID", "U_50": "ABS_U", "V_50": "ABS_V",
                           "J_50": "ABS_J"}, inplace=True)
 
 # Merge COSMOS2020 catalogue with Bagpipes fit results catalogue
-cosmos2020 = pd.merge(cosmos2020, pipes_cat, how="outer")
-
+cosmos2020 = pd.merge(cosmos2020, pipes_cat, how="outer",
+                      left_on="COSMOS2020_ID", right_on="ID")
 
 # ##### Merge in Khostovan et al. (2025) v1.1 specz compilation #####
 
@@ -73,14 +76,57 @@ khost.rename(columns={"specz": "ZSPEC_KHOSTOVAN", "flag": "ZFLAG_KHOSTOVAN"},
 # Cut Khostovan catalogue to objects that have counterparts in cosmos2020
 # catalogue, as well as high confidence speczs (flags 3 and 4)
 khost = khost[khost["Id_COS20_Classic"] > 0]
-khost = khost[khost["Confidence_level"] >= 95]
+#khost = khost[khost["Confidence_level"] >= 95]
 
 khost = khost[["Id_COS20_Classic", "ZSPEC_KHOSTOVAN", "ZFLAG_KHOSTOVAN"]]
 
 # Match using cosmos2020 and cosmos2025 IDs provided by Khostovan et al.
-cosmos2020 = pd.merge(cosmos2020, khost, how="outer", left_on="ID",
+cosmos2020 = pd.merge(cosmos2020, khost, how="outer", left_on="COSMOS2020_ID",
                       right_on="Id_COS20_Classic")
 
+# ##### Merge in Dawn JWST archive v4.5 specz compilation #####
+
+# DJA v4.5 NIRSpec catalogue, csv downloaded from
+# https://s3.amazonaws.com/msaexp-nirspec/extractions/nirspec_public_v4.5.html
+# First loaded into topcat, cut to grade == 3 and internal match performed
+# within 0.3" to produce groups of spectra corresponding to the same source
+dja_cat = Table.read("dja_nirspec_v4.5_grade3_with_groups.fits").to_pandas()
+
+# Get individual best redshift for objects that have multiple spectra
+cols = ["ra", "dec", "zfit", "GroupID"]
+aggregated_groups = dja_cat[cols].groupby("GroupID").agg(["mean", "std"])
+
+data_array = np.c_[aggregated_groups[("ra", "mean")].values,
+                   aggregated_groups[("dec", "mean")].values,
+                   aggregated_groups[("zfit", "mean")].values,
+                   aggregated_groups[("zfit", "std")].values]
+
+resolved_groups = pd.DataFrame(data_array,
+                               columns=["ra", "dec", "zfit", "zfit_std"])
+
+# Only retain objects with multiple spectra where all the redshifts agree
+resolved_groups = resolved_groups[resolved_groups["zfit_std"] < 0.05]
+resolved_groups = resolved_groups[["ra", "dec", "zfit"]]
+
+# Select rows that were not part of a group
+dja_cat = dja_cat[dja_cat["GroupID"].isnull()]
+dja_cat = dja_cat[["ra", "dec", "zfit"]]
+
+# Merge groups that have been reduced to a single redshift back into cat
+dja_cat = pd.concat([dja_cat, resolved_groups], ignore_index=True, axis=0)
+
+
+dja_cat.rename(columns={"ra": "ra_dja", "dec": "dec_dja", "zfit": "ZSPEC_DJA"},
+             inplace=True)
+
+cosmos2020 = pair_match_sky(cosmos2020, dja_cat, 0.3,
+                                  match_selection="Best match, symmetric",
+                                  ra_col_1="RA", dec_col_1="DEC",
+                                  ra_col_2="ra_dja", dec_col_2="dec_dja",
+                                  join_type="All from 1",
+                                  suffix1="", suffix2="_dja")
+
+cosmos2020.drop(columns=["ra_dja", "dec_dja"], inplace=True)
 
 # ##### Merge in GAIA star catalogue and flag potential guide stars #####
 
@@ -92,9 +138,9 @@ gaia_table = Table.read("gaia_stars_cosmos.fits").to_pandas()
 ra_mask = (gaia_table["ra"] > 149.05) & (gaia_table["ra"] < 151.07)
 dec_mask = (gaia_table["dec"] > 1.39) & (gaia_table["dec"] < 3.08)
 gaia_table = gaia_table[ra_mask & dec_mask]
-
-Table.from_pandas(gaia_table).write("test2.fits", overwrite=True)
-
+gaia_table["MOONRISE_ID"] = np.arange(1, len(gaia_table)+1).astype(str)
+gaia_table["MOONRISE_ID"] = "11006" + gaia_table["MOONRISE_ID"].str.zfill(9)
+gaia_table["STAR"] = 1
 
 # ##### Make flag for good potential guide stars #####
 
@@ -117,16 +163,14 @@ pm_mask = (gaia_table["pmra"].abs() < 0.1*1000)
 pm_mask = pm_mask & (gaia_table["pmdec"].abs() < 0.1*1000)
 var_flag = (gaia_table["phot_variable_flag"] != "VARIABLE")
 
-# Set the STAR flag to 1 for all gaia objects
-gaia_table["STAR"] = 1
-
 # combine masks and apply to GAIA table
 gaia_star_mask = ruwe_mask & single_mask & pm_mask & var_flag
 gaia_table["GOOD_STAR"] = 0
 gaia_table.loc[gaia_star_mask, "GOOD_STAR"] = 1
 
 gaia_table["HMAG_FLAG"] = -99.
-gaia_table = gaia_table[["source_id", "ra", "dec", "pmra", "pmdec", "ruwe",
+gaia_table = gaia_table[["MOONRISE_ID", "source_id", "ra", "dec",
+                         "pmra", "pmdec", "ruwe",
                          "STAR", "GOOD_STAR", "phot_g_mean_mag",
                          "phot_rp_mean_mag", "HMAG_FLAG"]]
 
@@ -185,9 +229,6 @@ gaia_table_match.loc[bad_H_mask, "HMAG"] = 0.75*x + 3.5
 gaia_table_match.loc[bad_H_mask, "HMAG_FLAG"] = 2
 gaia_table_match.loc[bad_H_mask, "GOOD_STAR"] = 0
 
-Table.from_pandas(gaia_table_match).write("test.fits", overwrite=True)
-
-
 # ##### Merge GAIA star catalogue into main catalogue #####
 
 # Get rid of anything in cosmos2020 within 1" of a GAIA star
@@ -208,28 +249,41 @@ gaia_table_match.rename(columns={"source_id": "GAIA_STAR_ID",
 # Add in GAIA stars to main catalogue
 cosmos2020 = pd.concat([cosmos2020, gaia_table_match], ignore_index=True)
 
-
 # ##### Merge in high-z and AGN (and other?) source catalogues #####
 
 
 # ##### Sort out best redshift column #####
 cosmos2020["ZBEST"] = -99.
 cosmos2020.loc[cosmos2020["ZPHOT"] > 0, "ZBEST"] = cosmos2020["ZPHOT"]
-zs_mask = (cosmos2020["ZSPEC_KHOSTOVAN"] > 0)
-cosmos2020.loc[zs_mask, "ZBEST"] = cosmos2020.loc[zs_mask, "ZSPEC_KHOSTOVAN"]
+
+zk_mask = (cosmos2020["ZFLAG_KHOSTOVAN"] >= 3) & (cosmos2020["ZFLAG_KHOSTOVAN"] <= 4)
+cosmos2020.loc[zk_mask, "ZBEST"] = cosmos2020.loc[zk_mask, "ZSPEC_KHOSTOVAN"]
+
+zdja_mask = (cosmos2020["ZSPEC_DJA"] > 0)
+cosmos2020.loc[zdja_mask, "ZBEST"] = cosmos2020.loc[zdja_mask, "ZSPEC_DJA"]
 
 
 # ##### Keep only necessary columns, set -99s and save to file #####
 
 cosmos2020.fillna(dict(zip(cosmos2020.columns, [-99] * cosmos2020.shape[0])),
                   inplace=True)
+"""
+mask = (cosmos2020.columns.str.endswith("_APER3")
+        | cosmos2020.columns.str.endswith("_FLUX")
+        | cosmos2020.columns.str.endswith("_FLUXERR")
+        | cosmos2020.columns.str.contains("FLUX"))
 
-cosmos2020 = cosmos2020[["ID", "RA", "DEC", "PMRA", "PMDEC", "HMAG", "HMAG_FLAG", "SIZE",
+flux_cols = cosmos2020.columns[mask].tolist()
+"""
+cosmos2020 = cosmos2020[["MOONRISE_ID", "COSMOS2020_ID", "GAIA_STAR_ID",
+                         "RA", "DEC", "PMRA", "PMDEC", "HMAG", "HMAG_FLAG", "SIZE",
                          "FLAG_COMBINED", "ZBEST", "ZPHOT", "ZSPEC_KHOSTOVAN",
-                         "ZFLAG_KHOSTOVAN", "STAR", "GOOD_STAR", "GAIA_STAR_ID", "RUWE",
+                         "ZFLAG_KHOSTOVAN", "ZSPEC_DJA", "STAR", "GOOD_STAR", "RUWE",
                          "GAIA_magG", "GAIA_magR", "ABS_U", "ABS_V", "ABS_J",
                          "stellar_mass_16", "stellar_mass_50",
-                         "stellar_mass_84"]]
+                         "stellar_mass_84"]]# + flux_cols]
+
+cosmos2020.sort_values("MOONRISE_ID", inplace=True)
 
 Table.from_pandas(cosmos2020).write("moonrise_cosmos_catalogue.fits",
                                     overwrite=True)
