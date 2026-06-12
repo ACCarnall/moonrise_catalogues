@@ -26,7 +26,7 @@ cosmos2020.rename(columns={"ALPHA_J2000": "RA",
                            "ID": "COSMOS2020_ID"}, inplace=True)
 
 cosmos2020["HMAG"] = -99.
-cosmos2020["HMAG_FLAG"] = -99.
+cosmos2020["HMAG_FLAG"] = -99
 H_mask = (cosmos2020["UVISTA_H_MAG_APER3"] > 0)
 cosmos2020.loc[H_mask, "HMAG"] = cosmos2020.loc[H_mask, "UVISTA_H_MAG_APER3"]
 cosmos2020.loc[H_mask, "HMAG_FLAG"] = 0
@@ -162,9 +162,10 @@ single_mask = (gaia_table["non_single_star"] == 0)
 pm_mask = (gaia_table["pmra"].abs() < 0.1*1000)
 pm_mask = pm_mask & (gaia_table["pmdec"].abs() < 0.1*1000)
 var_flag = (gaia_table["phot_variable_flag"] != "VARIABLE")
+mag_mask = (gaia_table["phot_rp_mean_mag"] > 15) & (gaia_table["phot_rp_mean_mag"] < 20)
 
 # combine masks and apply to GAIA table
-gaia_star_mask = ruwe_mask & single_mask & pm_mask & var_flag
+gaia_star_mask = ruwe_mask & single_mask & pm_mask & var_flag & mag_mask
 gaia_table["GOOD_STAR"] = 0
 gaia_table.loc[gaia_star_mask, "GOOD_STAR"] = 1
 
@@ -229,6 +230,12 @@ gaia_table_match.loc[bad_H_mask, "HMAG"] = 0.75*x + 3.5
 gaia_table_match.loc[bad_H_mask, "HMAG_FLAG"] = 2
 gaia_table_match.loc[bad_H_mask, "GOOD_STAR"] = 0
 
+# For anything that still doesn't have an H magnitude, set HMAG = 98
+still_bad_H_mask = gaia_table_match["HMAG"].isnull() | (gaia_table_match["HMAG"] < 0)
+
+gaia_table_match.loc[still_bad_H_mask, "HMAG"] = 98.
+gaia_table_match.loc[still_bad_H_mask, "HMAG_FLAG"] = -99
+
 # ##### Merge GAIA star catalogue into main catalogue #####
 
 # Get rid of anything in cosmos2020 within 1" of a GAIA star
@@ -254,14 +261,31 @@ cosmos2020 = pd.concat([cosmos2020, gaia_table_match], ignore_index=True)
 
 # ##### Sort out best redshift column #####
 cosmos2020["ZBEST"] = -99.
+cosmos2020["ZBEST_FLAG"] = -99.
+
 cosmos2020.loc[cosmos2020["ZPHOT"] > 0, "ZBEST"] = cosmos2020["ZPHOT"]
+cosmos2020.loc[cosmos2020["ZPHOT"] > 0, "ZBEST_FLAG"] = 0
 
 zk_mask = (cosmos2020["ZFLAG_KHOSTOVAN"] >= 3) & (cosmos2020["ZFLAG_KHOSTOVAN"] <= 4)
 cosmos2020.loc[zk_mask, "ZBEST"] = cosmos2020.loc[zk_mask, "ZSPEC_KHOSTOVAN"]
+cosmos2020.loc[zk_mask, "ZBEST_FLAG"] = 1
 
 zdja_mask = (cosmos2020["ZSPEC_DJA"] > 0)
 cosmos2020.loc[zdja_mask, "ZBEST"] = cosmos2020.loc[zdja_mask, "ZSPEC_DJA"]
+cosmos2020.loc[zdja_mask, "ZBEST_FLAG"] = 2
 
+# ##### Deal with missing HMAG values #####
+# Assign HMAG = 98, 99 values based on HSC y-band magnitudes where available
+nohmag_mask = (cosmos2020["HMAG_FLAG"] == -99)
+ymag_brighter_than_bg_mask = (cosmos2020["HSC_y_MAG_APER3"] > 0) & (cosmos2020["HSC_y_MAG_APER3"] <= 26.5)
+ymag_fainter_than_bg_mask = (cosmos2020["HSC_y_MAG_APER3"] > 26.5) | (cosmos2020["HSC_y_FLUX_APER3"] <= 0)
+
+cosmos2020.loc[(nohmag_mask & ymag_brighter_than_bg_mask), "HMAG"] = 98
+cosmos2020.loc[(nohmag_mask & ymag_fainter_than_bg_mask), "HMAG"] = 99
+
+# Only a very small number of sources don't have HSC_y_FLUX_APER3 values
+# To be conservative we assign these HMAG = 98
+cosmos2020.loc[nohmag_mask & (cosmos2020["HSC_y_FLUX_APER3"].isnull()), "HMAG"] = 98
 
 # ##### Keep only necessary columns, set -99s and save to file #####
 
@@ -277,13 +301,16 @@ flux_cols = cosmos2020.columns[mask].tolist()
 """
 cosmos2020 = cosmos2020[["MOONRISE_ID", "COSMOS2020_ID", "GAIA_STAR_ID",
                          "RA", "DEC", "PMRA", "PMDEC", "HMAG", "HMAG_FLAG", "SIZE",
-                         "FLAG_COMBINED", "ZBEST", "ZPHOT", "ZSPEC_KHOSTOVAN",
+                         "FLAG_COMBINED", "ZBEST", "ZBEST_FLAG", "ZPHOT", "ZSPEC_KHOSTOVAN",
                          "ZFLAG_KHOSTOVAN", "ZSPEC_DJA", "STAR", "GOOD_STAR", "RUWE",
                          "GAIA_magG", "GAIA_magR", "ABS_U", "ABS_V", "ABS_J",
                          "stellar_mass_16", "stellar_mass_50",
                          "stellar_mass_84"]]# + flux_cols]
 
 cosmos2020.sort_values("MOONRISE_ID", inplace=True)
+
+for id_col in ["MOONRISE_ID", "COSMOS2020_ID", "GAIA_STAR_ID", "HMAG_FLAG", "FLAG_COMBINED", "ZFLAG_KHOSTOVAN", "ZBEST_FLAG", "STAR", "GOOD_STAR"]:
+    cosmos2020[id_col] = cosmos2020[id_col].astype(int)
 
 Table.from_pandas(cosmos2020).write("moonrise_cosmos_catalogue.fits",
                                     overwrite=True)

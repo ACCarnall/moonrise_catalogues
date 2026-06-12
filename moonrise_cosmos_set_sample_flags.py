@@ -19,8 +19,10 @@ cat = Table.read("moonrise_cosmos_catalogue.fits").to_pandas()
 # Define necessary masks for setting MOONRISE priorities
 mask_phot_combined = cat["FLAG_COMBINED"] == 0
 
-mask_h24 = cat["HMAG"] <= 24
-mask_h23 = cat["HMAG"] <= 23
+mask_good_uvj = (cat["ABS_U"] > -95) & (cat["ABS_V"] > -95) & (cat["ABS_J"] > -95)
+
+mask_h24 = (cat["HMAG"] <= 24) & (cat["HMAG"] > 0)
+mask_h23 = (cat["HMAG"] <= 23) & (cat["HMAG"] > 0)
 mask_notstar = cat["STAR"] == 0
 
 mask_zpassive = ((cat["ZBEST"] >= 0.7) & (cat["ZBEST"] <= 1.7)
@@ -33,10 +35,10 @@ mask_uvj_passive = (cat["ABS_U"] - cat["ABS_V"] >= 0.88*(cat["ABS_V"] - cat["ABS
 
 # Make combined MOONRISE star-forming and passive masks
 moonrise_passive_mask = (mask_h23 & mask_zpassive & mask_phot_combined
-                         & mask_uvj_passive & mask_notstar)
+                         & mask_uvj_passive & mask_notstar & mask_good_uvj)
 
 moonrise_sf_mask = (mask_h24 & mask_zsf & mask_phot_combined & mask_notstar
-                    & ~moonrise_passive_mask)
+                    & ~moonrise_passive_mask & mask_good_uvj)
 
 print(np.sum(moonrise_passive_mask) + np.sum(moonrise_sf_mask))
 print(np.sum(mask_h24 & mask_zsf & mask_phot_combined))
