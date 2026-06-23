@@ -74,9 +74,7 @@ khost.rename(columns={"specz": "ZSPEC_KHOSTOVAN", "flag": "ZFLAG_KHOSTOVAN"},
              inplace=True)
 
 # Cut Khostovan catalogue to objects that have counterparts in cosmos2020
-# catalogue, as well as high confidence speczs (flags 3 and 4)
 khost = khost[khost["Id_COS20_Classic"] > 0]
-#khost = khost[khost["Confidence_level"] >= 95]
 
 khost = khost[["Id_COS20_Classic", "ZSPEC_KHOSTOVAN", "ZFLAG_KHOSTOVAN"]]
 
@@ -105,6 +103,7 @@ resolved_groups = pd.DataFrame(data_array,
                                columns=["ra", "dec", "zfit", "zfit_std"])
 
 # Only retain objects with multiple spectra where all the redshifts agree
+# This only removed ~0.3 per cent of objects (groups) from the DJA catalogue
 resolved_groups = resolved_groups[resolved_groups["zfit_std"] < 0.05]
 resolved_groups = resolved_groups[["ra", "dec", "zfit"]]
 
@@ -212,8 +211,10 @@ for i in range(len(drop_cols)):
 drop_cols.append("match_sep_arcsec")
 
 # Merge in H-band magnitudes from 2mass, converting from Vega to AB
+# The AB to Vega conversion of 1.5 was determined empirically by comparing
+# 2mass and COSMOS2020 H-band magnitudes for objects in both catalogues
 mask = (gaia_table_match["h_m"].notnull()) & (gaia_table_match["HMAG"] < 0)
-gaia_table_match.loc[mask, "HMAG"] = gaia_table_match.loc[mask, "h_m"] + 1.38
+gaia_table_match.loc[mask, "HMAG"] = gaia_table_match.loc[mask, "h_m"] + 1.5
 gaia_table_match.loc[mask, "HMAG_FLAG"] = 1
 
 gaia_table_match.drop(columns=drop_cols, inplace=True)
