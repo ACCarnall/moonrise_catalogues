@@ -109,13 +109,14 @@ resolved_groups = resolved_groups[["ra", "dec", "zfit"]]
 
 # Select rows that were not part of a group
 dja_cat = dja_cat[dja_cat["GroupID"].isnull()]
-dja_cat = dja_cat[["ra", "dec", "zfit"]]
+dja_cat["progid"] = dja_cat["msamet"].str[2:7].astype(int)
+dja_cat = dja_cat[["ra", "dec", "zfit", "srcid", "progid"]]
 
 # Merge groups that have been reduced to a single redshift back into cat
 dja_cat = pd.concat([dja_cat, resolved_groups], ignore_index=True, axis=0)
 
 
-dja_cat.rename(columns={"ra": "ra_dja", "dec": "dec_dja", "zfit": "ZSPEC_DJA"},
+dja_cat.rename(columns={"ra": "ra_dja", "dec": "dec_dja", "zfit": "ZSPEC_DJA", "srcid": "DJA_SOURCE_ID", "progid": "DJA_PROG_ID"},
              inplace=True)
 
 cosmos2020 = pair_match_sky(cosmos2020, dja_cat, 0.3,
@@ -127,7 +128,7 @@ cosmos2020 = pair_match_sky(cosmos2020, dja_cat, 0.3,
 
 cosmos2020.drop(columns=["ra_dja", "dec_dja"], inplace=True)
 
-# ##### Merge in GAIA star catalogue and flag potential guide stars #####
+# ##### Merge in GAIA star catalogue and flag potential acquisition stars #####
 
 # GAIA star catalogue, unedited download using only ra/dec criteria from
 # https://gea.esac.esa.int/archive/, SQL query text saved with this file
@@ -303,7 +304,8 @@ flux_cols = cosmos2020.columns[mask].tolist()
 cosmos2020 = cosmos2020[["MOONRISE_ID", "COSMOS2020_ID", "GAIA_STAR_ID",
                          "RA", "DEC", "PMRA", "PMDEC", "HMAG", "HMAG_FLAG", "SIZE",
                          "FLAG_COMBINED", "ZBEST", "ZBEST_FLAG", "ZPHOT", "ZSPEC_KHOSTOVAN",
-                         "ZFLAG_KHOSTOVAN", "ZSPEC_DJA", "STAR", "GOOD_STAR", "RUWE",
+                         "ZFLAG_KHOSTOVAN", "ZSPEC_DJA", "DJA_SOURCE_ID", "DJA_PROG_ID",
+                         "STAR", "GOOD_STAR", "RUWE",
                          "GAIA_magG", "GAIA_magR", "ABS_U", "ABS_V", "ABS_J",
                          "stellar_mass_16", "stellar_mass_50",
                          "stellar_mass_84"]]# + flux_cols]
