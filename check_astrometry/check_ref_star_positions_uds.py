@@ -82,8 +82,15 @@ gaia_table = gaia_table.groupby(gaia_star_mask).get_group(True)
 
 # UDS DR11 H-band mosaic image, unedited download from
 # https://www.nottingham.ac.uk/astronomy/UDS/data/dr11.html
-image = "UDS-DR11-H.mef.fits"
-mos = fits.open(image)
+image1 = "XMM1_VIDEO_H_microJy_skysub.fits"
+mos1 = fits.open(image1)
+
+image2 = "XMM2_VIDEO_H_microJy_skysub.fits"
+mos2 = fits.open(image2)
+
+image3 = "XMM3_VIDEO_H_microJy_skysub.fits"
+mos3 = fits.open(image3)
+
 
 
 # ##### Pick GAIA stars to plot #####
@@ -123,10 +130,18 @@ for i in range(100):
     dec = coords[indices[i], 2]
 
     try:
-        cut, cdelt = cutout(ra, dec, mos, size=size)
+        cut, cdelt = cutout(ra, dec, mos1, size=size)
 
     except astropy.nddata.utils.NoOverlapError:
-        continue
+        try:
+            cut, cdelt = cutout(ra, dec, mos2, size=size)
+
+        except astropy.nddata.utils.NoOverlapError:
+            try:
+                cut, cdelt = cutout(ra, dec, mos3, size=size)
+
+            except:
+                continue
 
     ax.scatter([size/cdelt/2], [size/cdelt/2], s=250, marker="+", lw=0.6,
                color="red", zorder=50)
@@ -187,10 +202,18 @@ for i in range(100):
     dec = coords[indices[i], 2]
 
     try:
-        cut, cdelt = cutout(ra, dec, mos, size=size)
+        cut, cdelt = cutout(ra, dec, mos1, size=size)
 
     except astropy.nddata.utils.NoOverlapError:
-        continue
+        try:
+            cut, cdelt = cutout(ra, dec, mos2, size=size)
+
+        except astropy.nddata.utils.NoOverlapError:
+            try:
+                cut, cdelt = cutout(ra, dec, mos3, size=size)
+
+            except:
+                continue
 
     ax.scatter([size/cdelt/2], [size/cdelt/2], s=250, marker="+", lw=0.6,
                color="red", zorder=50)
