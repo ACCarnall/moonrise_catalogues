@@ -20,16 +20,17 @@ cat = Table.read("moonrise_uds_xmm_catalogue.fits").to_pandas()
 
 # Define necessary masks for setting MOONRISE SF and Q sample flags
 
-mask_good_uvj = (cat["ABS_U"] > -95) & (cat["ABS_V"] > -95) & (cat["ABS_J"] > -95)
+mask_good_uvj = ((cat["ABS_U"] > -95) & (cat["ABS_V"] > -95) & (cat["ABS_J"] > -95)
+                 & (cat["ABS_U"] < 100) & (cat["ABS_V"] < 100) & (cat["ABS_J"] < 100))
 
 mask_h24 = (cat["HMAG"] <= 24) & (cat["HMAG"] > 0)
 mask_h23 = (cat["HMAG"] <= 23) & (cat["HMAG"] > 0)
 mask_notstar = cat["STAR"] == 0
 
-mask_zpassive = ((cat["ZBEST"] >= 0.7) & (cat["ZBEST"] <= 1.7)
+mask_zpassive = ((cat["ZBEST"] >= 0.9) & (cat["ZBEST"] <= 1.7)
                  | (cat["ZBEST"] >= 2.0) & (cat["ZBEST"] <= 2.3))
 
-mask_zsf = ((cat["ZBEST"] >= 0.7) & (cat["ZBEST"] <= 1.7)
+mask_zsf = ((cat["ZBEST"] >= 0.9) & (cat["ZBEST"] <= 1.7)
             | (cat["ZBEST"] >= 2.0) & (cat["ZBEST"] <= 2.6))
 
 mask_uvj_passive = (cat["ABS_U"] - cat["ABS_V"] >= 0.88*(cat["ABS_V"] - cat["ABS_J"]) + 0.49)
@@ -60,9 +61,8 @@ cat["in_AGN"] = cat["MOONRISE_ID"].isin(agn_cat_matched["MOONRISE_ID"]).astype(i
 
 
 # Set high-z sample flag
-
 cat["in_highz"] = np.zeros(len(cat), dtype=int)
-
+cat.loc[cat["HIZ_ID"] > 112, "in_highz"] = 1
 
 Table.from_pandas(cat).write("moonrise_uds_xmm_catalogue_sample_flags.fits",
                              overwrite=True)
