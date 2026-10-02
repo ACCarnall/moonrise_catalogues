@@ -49,15 +49,8 @@ cat["in_passive"] = moonrise_passive_mask.astype(int)
 cat["in_starforming"] = moonrise_sf_mask.astype(int)
 
 # Set AGN sample flag
-agn_cat = Table.read("XMMLSS_WG5_AGN_120225.fits").to_pandas()
-agn_cat_matched = pair_match_sky(agn_cat, cat, 0.3,
-                            match_selection="Best match, symmetric",
-                            join_type="1 and 2",
-                            ra_col_1="master_RA", dec_col_1="master_DEC",
-                            ra_col_2="RA", dec_col_2="DEC",
-                            suffix1="", suffix2="_derek_uds")
 
-cat["in_AGN"] = cat["MOONRISE_ID"].isin(agn_cat_matched["MOONRISE_ID"]).astype(int)
+cat["in_AGN"] = cat["MOONRISE_ID"].astype(str).str.startswith("13004").astype(int)
 
 
 # Set high-z sample flag

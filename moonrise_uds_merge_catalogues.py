@@ -22,10 +22,14 @@ derek_uds["PMDEC"] = 0.
 derek_uds.rename(columns={"zphot": "ZPHOT", "Dec": "DEC",
                            "ID": "derek_uds_ID"}, inplace=True)
 
-derek_uds["HMAG"] = 23.9-2.5*np.log10(derek_uds["VIDEO_H"]*derek_uds["isofactor"])
+derek_uds["HMAG"] = 0.
+uds_mask = (derek_uds["derek_uds_ID"] > 1e6) & (derek_uds["derek_uds_ID"] < 2e6)
+derek_uds.loc[uds_mask, "HMAG"] = 23.9-2.5*np.log10(derek_uds["wfcam_H"]*derek_uds["isofactor"]*derek_uds["iso_to_total"])
+derek_uds.loc[np.invert(uds_mask), "HMAG"] = 23.9-2.5*np.log10(derek_uds["VIDEO_H"]*derek_uds["isofactor"]*derek_uds["iso_to_total"])
+
 derek_uds["HMAG_FLAG"] = 0
 
-derek_uds["SIZE"] = 111.
+derek_uds["SIZE"] = -99.
 
 derek_uds["STAR"] = 0
 
@@ -80,14 +84,14 @@ single_mask = (gaia_table["non_single_star"] == 0)
 pm_mask = (gaia_table["pmra"].abs() < 0.1*1000)
 pm_mask = pm_mask & (gaia_table["pmdec"].abs() < 0.1*1000)
 var_flag = (gaia_table["phot_variable_flag"] != "VARIABLE")
-mag_mask = (gaia_table["phot_rp_mean_mag"] > 15) & (gaia_table["phot_rp_mean_mag"] < 20)
+mag_mask = (gaia_table["phot_rp_mean_mag"] < 20)# & (gaia_table["phot_rp_mean_mag"] > 15) # Removed in response to request following first commissioning run
 
 # combine masks and apply to GAIA table
 gaia_star_mask = ruwe_mask & single_mask & pm_mask & var_flag & mag_mask
 gaia_table["GOOD_STAR"] = 0
 gaia_table.loc[gaia_star_mask, "GOOD_STAR"] = 1
 
-gaia_table["HMAG_FLAG"] = 111.
+gaia_table["HMAG_FLAG"] = -99.
 gaia_table = gaia_table[["MOONRISE_ID", "source_id", "ra", "dec",
                          "pmra", "pmdec", "ruwe",
                          "STAR", "GOOD_STAR", "phot_g_mean_mag",
@@ -128,11 +132,11 @@ for i in range(len(drop_cols)):
 drop_cols.append("match_sep_arcsec")
 
 # Merge in H-band magnitudes from 2mass, converting from Vega to AB
-# The AB to Vega conversion of 1.35 was determined empirically by comparing
+# The AB to Vega conversion of 1.27 was determined empirically by comparing
 # 2mass and Derek's UDS H-band magnitudes for objects in both catalogues
 mask = (gaia_table_match["h_m"].notnull()) & ((gaia_table_match["HMAG"] < 0) | (gaia_table_match["HMAG"].isnull()))
 
-gaia_table_match.loc[mask, "HMAG"] = gaia_table_match.loc[mask, "h_m"] + 1.35
+gaia_table_match.loc[mask, "HMAG"] = gaia_table_match.loc[mask, "h_m"] + 1.27
 gaia_table_match.loc[mask, "HMAG_FLAG"] = 1
 
 gaia_table_match.drop(columns=drop_cols, inplace=True)
@@ -146,7 +150,7 @@ bad_H_mask = ((gaia_table_match["HMAG"] < 0)
               | (gaia_table_match["HMAG"] > 0.75*x + 7)
               | (gaia_table_match["HMAG"] < 0.75*x - 0.5))
 
-gaia_table_match.loc[bad_H_mask, "HMAG"] = 0.75*x + 3.5
+gaia_table_match.loc[bad_H_mask, "HMAG"] = 0.75*x + 3.42
 gaia_table_match.loc[bad_H_mask, "HMAG_FLAG"] = 2
 gaia_table_match.loc[bad_H_mask, "GOOD_STAR"] = 0
 
@@ -154,7 +158,7 @@ gaia_table_match.loc[bad_H_mask, "GOOD_STAR"] = 0
 still_bad_H_mask = gaia_table_match["HMAG"].isnull() | (gaia_table_match["HMAG"] < 0)
 
 gaia_table_match.loc[still_bad_H_mask, "HMAG"] = 98.
-gaia_table_match.loc[still_bad_H_mask, "HMAG_FLAG"] = 111
+gaia_table_match.loc[still_bad_H_mask, "HMAG_FLAG"] = -99
 
 # ##### Merge GAIA star catalogue into main catalogue #####
 
@@ -178,45 +182,41 @@ derek_uds = pd.concat([derek_uds, gaia_table_match], ignore_index=True)
 
 # ##### Merge in Derek i-band catalogue sources
 derek_iband = Table.read("XMM1+2+3_full_i_band_plus_H_161222.fits").to_pandas()
-nohmask = (derek_iband["ID_H_band"] == 111)
+nohmask = (derek_iband["ID_H_band"] == -99)
 derek_iband = derek_iband[nohmask]
 derek_iband["MOONRISE_ID"] = "13002" + derek_iband["ID_i_band"].astype(str).str.zfill(9)
 derek_iband.rename(columns={"RA_i_band": "RA", "Dec_i_band": "DEC"}, inplace=True)
 derek_iband["HMAG"] = 98
-derek_iband["SIZE"] = 111
+derek_iband["SIZE"] = -99
 
 derek_uds = pd.concat([derek_uds, derek_iband], ignore_index=True)
-
+print(derek_uds.shape)
 
 # ##### Merge in high-z and AGN (and other?) source catalogues #####
 
-agn_cat = Table.read("XMMLSS_WG5_AGN_120225.fits").to_pandas()
-agn_cat.rename(columns={"master_RA": "RA", "master_DEC": "DEC"}, inplace=True)
+agn_cat = Table.read("XMMLSS_WG5_AGN_commissioning_v2.fits").to_pandas()
+agn_cat.rename(columns={"ZSPEC_OTHER": "ZSPEC_AGN", "TEXP": "AGN_TEXP", "ID_OTHER_REF": "AGN_ID_OTHER_REF", "FLAG_MAG": "AGN_FLAG_MAG"}, inplace=True)
 
-exp_cols = agn_cat.columns[agn_cat.columns.str.startswith("Exposure")]
-agn_cat["AGN_texp"] = agn_cat[exp_cols].max(axis=1)
-agn_cat = agn_cat[agn_cat["AGN_texp"] > 0]
 
 # There are probably other columns from the AGN catalogue we should keep,
 # needs discussing with AGN working group
-agn_cat = agn_cat[["RA", "DEC", "AGN_texp"]]
+#agn_cat = agn_cat[["RA", "DEC", "AGN_TEXP", "AGN_ID_OTHER_REF", "ZSPEC_AGN"]]
 
-# Get rid of anything in the AGN catalogue that's already in derek uds cat
-agn_cat = pair_match_sky(agn_cat, derek_uds, 0.3,
-                            match_selection="All matches",
-                            join_type="1 not 2",
-                            ra_col_1="RA", dec_col_1="DEC",
-                            ra_col_2="RA", dec_col_2="DEC",
-                            suffix1="", suffix2="_derek_uds")
+# Get rid of anything in the Derek UDS catalogue that's also in the AGN catalogue
+derek_uds = pair_match_sky(derek_uds, agn_cat, 0.3,
+                           match_selection="All matches",
+                           join_type="1 not 2",
+                           ra_col_1="RA", dec_col_1="DEC",
+                           ra_col_2="RA", dec_col_2="DEC",
+                           suffix1="", suffix2="_agn_catalogue")
 
 agn_cat.reset_index(drop=True, inplace=True)
 agn_cat.index += 1
 agn_cat["MOONRISE_ID"] = "13004" + agn_cat.index.astype(str).str.zfill(9)
-agn_cat["HMAG"] = 98
-agn_cat["SIZE"] = 111
+agn_cat["HMAG"] = agn_cat["Hmag_FINAL"] + 2.5*np.log10(1/0.9) # AGN cat contains H_auto, we're taking H_total to be H_auto/0.9
+agn_cat["SIZE"] = -99
 
 derek_uds = pd.concat([derek_uds, agn_cat], ignore_index=True)
-
 
 # Now Hiz
 hiz_cat = Table.read("LAES_UDS_moonsinfo.fits").to_pandas()
@@ -224,6 +224,7 @@ hiz_cat["LAE_ID"] = hiz_cat["LAE_ID"].astype(str)
 hiz_cat.rename(columns={"ZSPEC": "ZSPEC_HIZ", "LAE_ID": "HIZ_ID"}, inplace=True)
 hiz_cat = hiz_cat[["HIZ_ID", "RA", "DEC", "ZSPEC_HIZ"]]
 
+# Select things in both the High-z catalogue and Derek's catalogue
 hiz_cat_old_obj = pair_match_sky(hiz_cat, derek_uds, 0.3,
                                  match_selection="Best match, symmetric",
                                  join_type="1 and 2",
@@ -234,9 +235,10 @@ hiz_cat_old_obj = pair_match_sky(hiz_cat, derek_uds, 0.3,
 hiz_cat_old_obj.index = hiz_cat_old_obj["MOONRISE_ID"].values
 hiz_cat_old_obj = hiz_cat_old_obj[["MOONRISE_ID", "HIZ_ID", "ZSPEC_HIZ"]]
 
+# Merge hiz columns into Derek catalogue for objects in both
 derek_uds.index = derek_uds["MOONRISE_ID"].values
 derek_uds = pd.merge(derek_uds, hiz_cat_old_obj, how="left", left_index=True, right_index=True, suffixes=(None, "_hiz"))
-derek_uds.loc[derek_uds["HIZ_ID"].isnull(), "HIZ_ID"] = "111"
+derek_uds.loc[derek_uds["HIZ_ID"].isnull(), "HIZ_ID"] = "-99"
 
 # Get rid of anything in the Hiz catalogue that's already in derek uds cat
 hiz_cat_new_obj = pair_match_sky(hiz_cat, derek_uds, 0.3,
@@ -246,11 +248,12 @@ hiz_cat_new_obj = pair_match_sky(hiz_cat, derek_uds, 0.3,
                                  ra_col_2="RA", dec_col_2="DEC",
                                  suffix1="", suffix2="_derek_uds")
 
+# Add these things to the catalogue by concatenation
 hiz_cat_new_obj.reset_index(drop=True, inplace=True)
 hiz_cat_new_obj.index += 1
 hiz_cat_new_obj["MOONRISE_ID"] = "13003" + hiz_cat_new_obj.index.astype(str).str.zfill(9)
 hiz_cat_new_obj["HMAG"] = 98
-hiz_cat_new_obj["SIZE"] = 111
+hiz_cat_new_obj["SIZE"] = -99
 
 derek_uds = pd.concat([derek_uds, hiz_cat_new_obj], ignore_index=True)
 
@@ -363,8 +366,8 @@ derek_uds = pair_match_sky(derek_uds, dja_cat, 0.3,
 derek_uds.drop(columns=["ra_dja", "dec_dja"], inplace=True)
 
 # ##### Sort out best redshift column #####
-derek_uds["ZBEST"] = 111.
-derek_uds["ZBEST_FLAG"] = 111.
+derek_uds["ZBEST"] = -99.
+derek_uds["ZBEST_FLAG"] = -99.
 
 derek_uds.loc[derek_uds["ZPHOT"] > 0, "ZBEST"] = derek_uds["ZPHOT"]
 derek_uds.loc[derek_uds["ZPHOT"] > 0, "ZBEST_FLAG"] = 0
@@ -389,6 +392,25 @@ zhiz_mask = (derek_uds["ZSPEC_HIZ"] > 0)
 derek_uds.loc[zhiz_mask, "ZBEST"] = derek_uds.loc[zhiz_mask, "ZSPEC_HIZ"]
 derek_uds.loc[zhiz_mask, "ZBEST_FLAG"] = 5
 
+zagn_mask = (derek_uds["ZSPEC_AGN"] > 0)
+derek_uds.loc[zagn_mask, "ZBEST"] = derek_uds.loc[zagn_mask, "ZSPEC_AGN"]
+derek_uds.loc[zagn_mask, "ZBEST_FLAG"] = 6
+
+# ##### Add milky way dust
+
+from dustmaps.sfd import SFDQuery
+from astropy.coordinates import SkyCoord
+
+def get_mw_ebv(ra,dec):
+    coords = SkyCoord(ra, dec, unit='deg')
+    sfd = SFDQuery() #Schlegel, Finkbeiner & Davis (1998)
+    ebv = sfd(coords)
+    return ebv * 0.86 # Apply recalibration of Schlafly & Finkbeiner (2011)
+
+#Get ra and dec from somewhere, then run function
+
+derek_uds["MW_EBV"] = get_mw_ebv(derek_uds["RA"], derek_uds["DEC"])
+
 # ##### Final tidying up and writing output catalogue #####
 
 derek_uds = derek_uds[["MOONRISE_ID", "derek_uds_ID", "GAIA_STAR_ID", "UDSz_ID",
@@ -400,11 +422,11 @@ derek_uds = derek_uds[["MOONRISE_ID", "derek_uds_ID", "GAIA_STAR_ID", "UDSz_ID",
                          "STAR", "GOOD_STAR", "RUWE",
                          "GAIA_magG", "GAIA_magR", "ABS_U", "ABS_V", "ABS_J",
                          "stellar_mass_16", "stellar_mass_50",
-                         "stellar_mass_84", "AGN_texp"]]
+                         "stellar_mass_84", "AGN_TEXP", "ZSPEC_AGN","AGN_ID_OTHER_REF", "AGN_FLAG_MAG", "MW_EBV"]]
 
 for col in ["derek_uds_ID", "GAIA_STAR_ID", "HMAG_FLAG"]:
     nan_mask = derek_uds[col].isnull()
-    derek_uds.loc[nan_mask, col] = 111
+    derek_uds.loc[nan_mask, col] = -99
 
 for col in ["STAR", "GOOD_STAR"]:
     nan_mask = derek_uds[col].isnull()
@@ -418,9 +440,9 @@ for i in range(len(derek_uds.columns)):
     dtype = derek_uds.dtypes.values[i]
     nan_mask = derek_uds[col].isnull()
     if dtype == "float64" or dtype == "int64" or dtype == "float32" or dtype == "int32":
-        derek_uds.loc[nan_mask, col] = 111
+        derek_uds.loc[nan_mask, col] = -99
     elif dtype == "str" or dtype == "object":
-        derek_uds.loc[nan_mask, col] = "111"
+        derek_uds.loc[nan_mask, col] = "-99"
 
 
 for id_col in ["MOONRISE_ID", "derek_uds_ID", "GAIA_STAR_ID", "HIZ_ID", "HMAG_FLAG",

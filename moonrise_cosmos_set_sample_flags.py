@@ -25,10 +25,10 @@ mask_h24 = (cat["HMAG"] <= 24) & (cat["HMAG"] > 0)
 mask_h23 = (cat["HMAG"] <= 23) & (cat["HMAG"] > 0)
 mask_notstar = cat["STAR"] == 0
 
-mask_zpassive = ((cat["ZBEST"] >= 0.7) & (cat["ZBEST"] <= 1.7)
+mask_zpassive = ((cat["ZBEST"] >= 0.9) & (cat["ZBEST"] <= 1.7)
                  | (cat["ZBEST"] >= 2.0) & (cat["ZBEST"] <= 2.3))
 
-mask_zsf = ((cat["ZBEST"] >= 0.7) & (cat["ZBEST"] <= 1.7)
+mask_zsf = ((cat["ZBEST"] >= 0.9) & (cat["ZBEST"] <= 1.7)
             | (cat["ZBEST"] >= 2.0) & (cat["ZBEST"] <= 2.6))
 
 mask_uvj_passive = (cat["ABS_U"] - cat["ABS_V"] >= 0.88*(cat["ABS_V"] - cat["ABS_J"]) + 0.49)
